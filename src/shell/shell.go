@@ -143,29 +143,21 @@ func (ss *ShellScan) cmdFileHandle(line string) {
 }
 
 func (ss *ShellScan)run(){
-    tmpl := template.Must( template.ParseFiles("../tmpl/file.tmpl"))
-    f, err := ioutil.TempFile(".", "temp")
-    handleErr(err)
-    defer f.Close()
-    tmpl.Execute(f, ss.transferToTmplData())
-    newPath := f.Name() + ".go"
-    os.Rename(f.Name(), newPath)
-    defer os.Remove(newPath)
+    gf := ss.makeGoFile()
+    defer func(){
+        gf.Close()
+        os.Remove(gf.Name())
+    }()
     
-    handleErr(exec.Command("gofmt", "-w",newPath).Run())
-    handleErr(exec.Command("goimports", "-w",newPath).Run())
-    out, err := exec.Command("go", "run", newPath).CombinedOutput()
     
-    if _, ok := err.(*exec.ExitError);!ok{
-        handleErr(err)
-    }
-    fmt.Println(string(out))
+    handleComOutErr( exec.Command("go", "run", gf.Name()).CombinedOutput() )
+    
+    
     
     
     
 }
-
-func (ss *ShellScan)print(){
+func (ss *ShellScan)makeGoFile() *os.File{
     tmpl := template.Must( template.ParseFiles("../tmpl/file.tmpl"))
     f, err := ioutil.TempFile(".", "temp")
     handleErr(err)
@@ -173,16 +165,27 @@ func (ss *ShellScan)print(){
     tmpl.Execute(f, ss.transferToTmplData())
     newPath := f.Name() + ".go"
     os.Rename(f.Name(), newPath)
-    defer os.Remove(newPath)
     
-    handleErr(exec.Command("gofmt", "-w",newPath).Run())
-    handleErr(exec.Command("goimports", "-w",newPath).Run())
+    handleComOutErr( exec.Command("gofmt", "-w",newPath).CombinedOutput() )
+    
+    handleComOutErr( exec.Command("goimports", "-w",newPath).CombinedOutput())
+    
     nf, err := os.Open(newPath)
     handleErr(err)
-    defer nf.Close()
+    return nf
+}
+
+func (ss *ShellScan)print(){
+    gf := ss.makeGoFile()
+    defer func(){
+        gf.Close()
+        os.Remove(gf.Name())
+    }()
+    fmt.Println(gf.Name())
+    
     var count int 
     
-    bf := bufio.NewReader(nf)
+    bf := bufio.NewReader(gf)
     for {
         line, err := bf.ReadString('\n')
         if err == io.EOF {
@@ -201,4 +204,10 @@ func handleErr( err error){
     if err != nil {
         panic(err)
     }
+}
+func handleComOutErr(bytes []byte, err error  ){
+     if _, ok := err.(*exec.ExitError);!ok{
+        handleErr(err)
+    }
+    fmt.Println(string(bytes))
 }
