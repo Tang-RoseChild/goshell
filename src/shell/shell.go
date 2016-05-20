@@ -29,6 +29,16 @@ var keywords = map[string]usage{
     "$CLEAR":usage("clear all input"),
 }
 
+var (
+    stepSetting bool
+)
+
+var (
+    blocked bool // use for scanning a block statement,like type, func and so on
+    blockedString string 
+    blockAppend *[]string
+)
+
 var SS *ShellScan = &ShellScan{}
 var TmplData *tmplData = &tmplData{}
 
@@ -79,18 +89,35 @@ func HandleScan(){
     
     
     for {
-    
-        fmt.Print(">>>")
+        if blocked {
+        fmt.Print(">>>>>>")
+        } else {
+            fmt.Print(">>>")
+        }
+        
         line, err := br.ReadString('\n')
         if err != nil {
             continue
         }
+        
+        if blocked{
+            blockedString += line
+            if strings.Contains(line,"}"){
+                blocked = false
+                
+                *blockAppend = append(*blockAppend, blockedString)
+                blockedString = ""
+                blockAppend = nil
+            } 
+            
+            continue 
+        }
        
         if  strings.HasPrefix(strings.TrimLeft(line, " "), "$"){
-        code := SS.operateHandle(line)
-        if code == 1 {
-            break
-        }
+            code := SS.operateHandle(line)
+            if code == 1 {
+                break
+            }
         } else {
             SS.cmdFileHandle(line)
         }
@@ -120,7 +147,30 @@ func (ss *ShellScan) operateHandle(line string) int{
             // print
             ss.print()
         }
+        if strings.HasPrefix(strings.TrimLeft(line, " "), "$CLEAR"){
+            // print
+            *ss = ShellScan{}
+            
+        }
         
+        if strings.HasPrefix(strings.TrimLeft(line, " "), "$STEP"){
+            
+            split := strings.Split(line, " ")
+            
+            if len(split) == 2 {
+                trimedStr := strings.Trim(split[1],"\n" )
+                
+                 if  trimedStr == "ON"{
+                     
+                     stepSetting = true
+                     fmt.Println("ON :: ",stepSetting)
+                     
+                 } else if  trimedStr == "OFF"{
+                     stepSetting = false
+                 }
+            }
+            
+        }
         return 0
     }
 func (ss *ShellScan) cmdFileHandle(line string) {
@@ -135,10 +185,42 @@ func (ss *ShellScan) cmdFileHandle(line string) {
     
     switch  {
     case strings.HasPrefix(trimedStr, "type"):
-        ss.TypeBody = append(ss.TypeBody, line)
+        blocked = true
+        blockAppend = &(ss.TypeBody)
+        typeStr := strings.TrimRight(strings.TrimLeft(line, " ")," ")
+        if strings.Contains(typeStr,"{") == false && strings.Contains(typeStr,"}")  == false {
+            blocked = false
+            blockAppend = nil
+            ss.TypeBody = append(ss.TypeBody, line)
+        } else {
+            blockedString = line
+        }
+        
+    case strings.HasPrefix(trimedStr, "func"):
+        funcStr := strings.TrimRight(strings.TrimRight(strings.TrimLeft(line, " ")," "),"\n")
+        if strings.HasSuffix(funcStr,"{") == false{
+            fmt.Println("func statement should ends with {")
+        } else {
+            blocked = true
+            blockedString += line
+            blockAppend = &(ss.FuncBody)
+        }
+            
+        
+    case strings.HasPrefix(trimedStr, "global"):
+        ss.TypeBody = append(ss.GlobalVars, line)
+    case strings.HasPrefix(trimedStr, "import"):
+        ss.TypeBody = append(ss.Pkgs, line)
+    case strings.HasPrefix(trimedStr, "const"):
+        ss.TypeBody = append(ss.ConstBody, line)
     
     default :
         ss.MainBody = append(ss.MainBody, line)    
+    }
+    
+    if stepSetting {
+        fmt.Println(" step true")
+        ss.run()
     }
 }
 
